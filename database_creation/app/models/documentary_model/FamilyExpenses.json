@@ -1,0 +1,12 @@
+{
+    "family_id": 1,
+    "expenses": [
+        {
+            "user_id": 101,
+            "expense_id": 1001,
+            "amount": 500.0,
+            "date": "2024-11-01",
+            "category_id": 5
+        }
+    ]
+}

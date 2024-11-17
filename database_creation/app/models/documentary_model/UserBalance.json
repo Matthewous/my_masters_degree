@@ -1,0 +1,8 @@
+{
+    "user_id": 101,
+    "balance": {
+        "total_income": 15000.0,
+        "total_expense": 12000.0,
+        "balance_date": "2024-11-01"
+    }
+}

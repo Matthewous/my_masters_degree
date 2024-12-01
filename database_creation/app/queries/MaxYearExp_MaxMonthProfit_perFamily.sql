@@ -1,54 +1,46 @@
 WITH yearly_expenses AS (
     SELECT 
-        u.family_id,
+        fm.family_id,
         u.user_id,
         SUM(e.amount) AS total_expense
-    FROM users u
+    FROM familymembers fm
+    JOIN users u ON fm.user_id = u.user_id
     JOIN expenses e ON u.user_id = e.user_id
-    WHERE e.date >= DATE(NOW()) - INTERVAL 1 YEAR
-    GROUP BY u.family_id, u.user_id
+    WHERE e.date >= NOW() - INTERVAL '1 YEAR'
+    GROUP BY fm.family_id, u.user_id
 ),
 monthly_incomes AS (
     SELECT 
-        u.family_id,
+        fm.family_id,
         u.user_id,
         SUM(i.amount) AS total_income
-    FROM users u
+    FROM familymembers fm
+    JOIN users u ON fm.user_id = u.user_id
     JOIN incomes i ON u.user_id = i.user_id
-    WHERE i.date >= DATE(NOW()) - INTERVAL 1 MONTH
-    GROUP BY u.family_id, u.user_id
+    WHERE i.date >= NOW() - INTERVAL '1 MONTH'
+    GROUP BY fm.family_id, u.user_id
 ),
 max_yearly_expenses AS (
-    SELECT 
+    SELECT DISTINCT ON (family_id) 
         family_id,
         user_id AS max_expense_user_id,
-        total_expense AS max_expense
+        total_expense
     FROM yearly_expenses
-    WHERE (family_id, total_expense) IN (
-        SELECT 
-            family_id, MAX(total_expense)
-        FROM yearly_expenses
-        GROUP BY family_id
-    )
+    ORDER BY family_id, total_expense DESC
 ),
 max_monthly_incomes AS (
-    SELECT 
+    SELECT DISTINCT ON (family_id)
         family_id,
         user_id AS max_income_user_id,
-        total_income AS max_income
+        total_income
     FROM monthly_incomes
-    WHERE (family_id, total_income) IN (
-        SELECT 
-            family_id, MAX(total_income)
-        FROM monthly_incomes
-        GROUP BY family_id
-    )
+    ORDER BY family_id, total_income DESC
 )
 SELECT 
     e.family_id,
     e.max_expense_user_id,
-    e.max_expense,
+    e.total_expense AS max_expense,
     i.max_income_user_id,
-    i.max_income
+    i.total_income AS max_income
 FROM max_yearly_expenses e
 JOIN max_monthly_incomes i ON e.family_id = i.family_id;

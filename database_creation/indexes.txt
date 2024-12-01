@@ -1,0 +1,189 @@
+Q1
+
+Без индекса:
+
+Hash Join  (cost=15.05..44.72 rows=1 width=30)
+  Hash Cond: (e.user_id = fm.user_id)
+  ->  Seq Scan on expenses e  (cost=0.00..29.65 rows=7 width=30)
+        Filter: ((date >= '2024-01-01'::date) AND (date <= '2024-12-31'::date))
+  ->  Hash  (cost=14.91..14.91 rows=11 width=4)
+        ->  Bitmap Heap Scan on familymembers fm  (cost=4.24..14.91 rows=11 width=4)
+              Recheck Cond: (family_id = 1)
+              ->  Bitmap Index Scan on familymembers_pkey  (cost=0.00..4.24 rows=11 width=0)
+                    Index Cond: (family_id = 1)
+
+Вывод: Hash Join используется для соединения таблиц expenses и familymembers, а для этого нужна хеш-таблица по колонке user_id. Это значит, что индекс на user_id в таблице expenses или familymembers может ускорить выполнение.
+Решение: CREATE INDEX idx_expenses_user_id ON Expenses(user_id);
+
+С индексом:
+
+Nested Loop  (cost=0.15..10.59 rows=1 width=30)
+  ->  Seq Scan on expenses e  (cost=0.00..1.07 rows=1 width=30)
+        Filter: ((date >= '2024-01-01'::date) AND (date <= '2024-12-31'::date))
+  ->  Index Scan using familymembers_user_id_key on familymembers fm  (cost=0.15..8.17 rows=1 width=4)
+        Index Cond: (user_id = e.user_id)
+        Filter: (family_id = 1)
+
+Сравнение с предыдущим планом:
+Ранее:
+Использовался Hash Join, который требовал построения хеш-таблицы и полного сканирования (Seq Scan) обеих таблиц.
+Общая стоимость выполнения была 15.05..44.72.
+Сейчас:
+Используется Nested Loop, который эффективнее при небольшом количестве подходящих строк.
+Таблица expenses все еще сканируется последовательно (Seq Scan), но теперь фильтрация по user_id осуществляется с помощью индексного сканирования (Index Scan).
+Общая стоимость выполнения 0.15..10.59 значительно ниже, что свидетельствует о более быстром выполнении запроса.
+
+_______________________
+
+Q2
+
+Без индекса:
+
+HashAggregate  (cost=1.07..1.08 rows=1 width=12)
+  Group Key: user_id
+  Filter: (count(expense_id) >= 1)
+  ->  Seq Scan on expenses e  (cost=0.00..1.06 rows=1 width=8)
+        Filter: (category_id = 1)
+
+Вывод: Чтобы ускорить этот запрос, можно добавить индекс на столбец category_id в таблице expenses. Это позволит избежать полного сканирования таблицы (Seq Scan) и использовать индексное сканирование для фильтрации строк по category_id.
+Решение: CREATE INDEX idx_expenses_category ON Expenses(category_id);
+
+
+С индексом:
+
+HashAggregate  (cost=1.07..1.08 rows=1 width=12)
+  Group Key: user_id
+  Filter: (count(expense_id) >= 1)
+  ->  Seq Scan on expenses e  (cost=0.00..1.06 rows=1 width=8)
+        Filter: (category_id = 1)
+
+так как план все равно включает Seq Scan для таблицы expenses. 
+Это может происходить из-за малого количества данных в таблице: 
+Если таблица expenses не содержит большого объема данных, PostgreSQL может решить, что сканирование всей таблицы (даже без индекса) является более эффективным вариантом. 
+Это связано с тем, что использование индекса может потребовать дополнительных операций для поиска и последующего извлечения данных, что не всегда оправдано для небольших таблиц.
+
+_______________________
+
+Q3
+
+Без индекса:
+
+        Hash Cond: (u.user_id = e.user_id)
+        ->  Hash Right Join  (cost=13.82..41.37 rows=437 width=22)
+              Hash Cond: (i.user_id = u.user_id)
+              ->  Seq Scan on incomes i  (cost=0.00..26.38 rows=437 width=22)
+                    Filter: (date <= '2024-11-17'::date)
+              ->  Hash  (cost=11.70..11.70 rows=170 width=4)
+                    ->  Seq Scan on users u  (cost=0.00..11.70 rows=170 width=4)
+        ->  Hash  (cost=1.06..1.06 rows=2 width=22)
+              ->  Seq Scan on expenses e  (cost=0.00..1.06 rows=2 width=22)
+                    Filter: (date <= '2024-11-17'::date)
+
+Вывод:
+
+Hash Right Join выполняет объединение таблиц incomes, expenses и users. Для этого используется хеширование, что может быть затратным по времени, особенно если таблицы содержат большое количество строк. При этом индекс на user_id в таблице familymembers уже используется.
+Для таблицы incomes применяется Seq Scan с фильтрацией по дате (i.date <= '2024-11-17'), что может быть медленным, если таблица большая. Также аналогично работает и для таблицы expenses.
+
+Решение:
+
+CREATE INDEX idx_incomes_date ON Incomes(date);
+CREATE INDEX idx_expenses_date ON Expenses(date);
+CREATE INDEX idx_incomes_user_id ON Incomes(user_id);
+
+С индексом:
+
+HashAggregate  (cost=16.42..19.39 rows=170 width=36)
+  Group Key: u.user_id
+  ->  Hash Left Join  (cost=2.14..15.14 rows=170 width=40)
+        Hash Cond: (u.user_id = e.user_id)
+        ->  Hash Left Join  (cost=1.05..13.40 rows=170 width=22)
+              Hash Cond: (u.user_id = i.user_id)
+              ->  Seq Scan on users u  (cost=0.00..11.70 rows=170 width=4)
+              ->  Hash  (cost=1.04..1.04 rows=1 width=22)
+                    ->  Seq Scan on incomes i  (cost=0.00..1.04 rows=1 width=22)
+                          Filter: (date <= '2024-11-17'::date)
+        ->  Hash  (cost=1.06..1.06 rows=2 width=22)
+              ->  Seq Scan on expenses e  (cost=0.00..1.06 rows=2 width=22)
+                    Filter: (date <= '2024-11-17'::date)
+
+Без индекса: Запрос предполагает обработку 437 строк для таблицы incomes и 2 строки для таблицы expenses, что подразумевает, что полное сканирование затруднит производительность при большом объеме данных.
+С индексом: Количество строк в индексе и таблицах оценивается как 170 строк для пользователей и немного для других таблиц. Индексы значительно ограничивают количество данных, что помогает ускорить выполнение запроса.
+Таким образом при большом кол-ве данных время на обработку будет затрачено меньше при варианте с индексированием
+
+
+_______________________
+
+Q4
+
+Без индекса:
+
+Merge Join  (cost=25.88..26.71 rows=13 width=76)
+  Merge Cond: (fm.family_id = fm_1.family_id)
+  ->  Unique  (cost=15.83..15.97 rows=27 width=40)
+        ->  Sort  (cost=15.83..15.90 rows=27 width=40)
+              Sort Key: fm.family_id, (sum(e.amount)) DESC
+              ->  HashAggregate  (cost=14.58..14.92 rows=27 width=40)
+                    Group Key: fm.family_id, u.user_id
+                    ->  Nested Loop  (cost=1.27..14.38 rows=27 width=26)
+                          ->  Hash Join  (cost=1.11..13.47 rows=2 width=26)
+                                Hash Cond: (u.user_id = e.user_id)
+                                ->  Seq Scan on users u  (cost=0.00..11.70 rows=170 width=4)
+                                ->  Hash  (cost=1.09..1.09 rows=2 width=22)
+                                      ->  Seq Scan on expenses e  (cost=0.00..1.09 rows=2 width=22)
+                                            Filter: (date >= (now() - '1 year'::interval))
+                          ->  Index Scan using familymembers_user_id_key on familymembers fm  (cost=0.15..0.45 rows=1 width=8)
+                                Index Cond: (user_id = u.user_id)
+  ->  Unique  (cost=10.05..10.11 rows=13 width=40)
+        ->  Sort  (cost=10.05..10.08 rows=13 width=40)
+              Sort Key: fm_1.family_id, (sum(i.amount)) DESC
+              ->  HashAggregate  (cost=9.51..9.68 rows=13 width=40)
+                    Group Key: fm_1.family_id, u_1.user_id
+                    ->  Nested Loop  (cost=0.30..9.42 rows=13 width=26)
+                          ->  Nested Loop  (cost=0.15..9.23 rows=1 width=30)
+                                ->  Seq Scan on incomes i  (cost=0.00..1.05 rows=1 width=22)
+                                      Filter: (date >= (now() - '1 mon'::interval))
+                                ->  Index Scan using familymembers_user_id_key on familymembers fm_1  (cost=0.15..8.17 rows=1 width=8)
+                                      Index Cond: (user_id = i.user_id)
+                          ->  Index Only Scan using users_pkey on users u_1  (cost=0.14..0.18 rows=1 width=4)
+                                Index Cond: (user_id = fm_1.user_id)
+
+Для ускорения фильтрации по дате: В подзапросах вы фильтруете строки по дате для таблиц expenses и incomes. Можно создать индекс, который будет включать поле date в сочетании с полем user_id, чтобы ускорить выборку данных в рамках указанных условий.
+
+Решение:
+CREATE INDEX idx_expenses_date_user_id ON expenses (date, user_id);
+CREATE INDEX idx_incomes_date_user_id ON incomes (date, user_id);
+
+С индексом:
+
+Merge Join  (cost=25.88..26.71 rows=13 width=76)
+  Merge Cond: (fm.family_id = fm_1.family_id)
+  ->  Unique  (cost=15.83..15.97 rows=27 width=40)
+        ->  Sort  (cost=15.83..15.90 rows=27 width=40)
+              Sort Key: fm.family_id, (sum(e.amount)) DESC
+              ->  HashAggregate  (cost=14.58..14.92 rows=27 width=40)
+                    Group Key: fm.family_id, u.user_id
+                    ->  Nested Loop  (cost=1.27..14.38 rows=27 width=26)
+                          ->  Hash Join  (cost=1.11..13.47 rows=2 width=26)
+                                Hash Cond: (u.user_id = e.user_id)
+                                ->  Seq Scan on users u  (cost=0.00..11.70 rows=170 width=4)
+                                ->  Hash  (cost=1.09..1.09 rows=2 width=22)
+                                      ->  Seq Scan on expenses e  (cost=0.00..1.09 rows=2 width=22)
+                                            Filter: (date >= (now() - '1 year'::interval))
+                          ->  Index Scan using familymembers_user_id_key on familymembers fm  (cost=0.15..0.45 rows=1 width=8)
+                                Index Cond: (user_id = u.user_id)
+  ->  Unique  (cost=10.05..10.11 rows=13 width=40)
+        ->  Sort  (cost=10.05..10.08 rows=13 width=40)
+              Sort Key: fm_1.family_id, (sum(i.amount)) DESC
+              ->  HashAggregate  (cost=9.51..9.68 rows=13 width=40)
+                    Group Key: fm_1.family_id, u_1.user_id
+                    ->  Nested Loop  (cost=0.30..9.42 rows=13 width=26)
+                          ->  Nested Loop  (cost=0.15..9.23 rows=1 width=30)
+                                ->  Seq Scan on incomes i  (cost=0.00..1.05 rows=1 width=22)
+                                      Filter: (date >= (now() - '1 mon'::interval))
+                                ->  Index Scan using familymembers_user_id_key on familymembers fm_1  (cost=0.15..8.17 rows=1 width=8)
+                                      Index Cond: (user_id = i.user_id)
+                          ->  Index Only Scan using users_pkey on users u_1  (cost=0.14..0.18 rows=1 width=4)
+                                Index Cond: (user_id = fm_1.user_id)
+
+Вывод:
+План выполнения запроса до и после создания индексов показывает, что добавление индексов для фильтрации по датам в подзапросах не изменяет общую стоимость выполнения запроса (cost=25.88..26.71 в обоих случаях), однако может улучшить производительность за счет ускорения фильтрации большого объема данных.
